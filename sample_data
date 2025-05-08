@@ -6,33 +6,33 @@ use IEEE.NUMERIC_STD.ALL;
 entity sample_data is
     port(clk, rst                   : in std_logic;
          cpol, cpha, cont, enable   : out std_logic;
-         clk_div, addr              : out integer; 
          tx_data                    : out std_logic_vector(15 downto 0);
          rx_data                    : in std_logic_vector(15 downto 0);
-         busy                        : in std_logic;
+         busy                       : in std_logic;
+         led                        : out std_logic_vector(1 downto 0);
+         -- CORDIC Lin ports
+         send                       : out std_logic;
+         data_send                  : out std_logic_vector(39 downto 0);
          
-         --dMem Ports
-         dAddr      : out std_logic_vector(15 downto 0);
-         wr_en      : out std_logic_vector(0 downto 0);
-         dIn        : out std_logic_vector(15 downto 0)
-         
-         );
+         -- CORDIC Ang Ports
+         send_ang                   : out std_logic;
+         data_send_ang              : out std_logic_vector(39 downto 0));
          
 end sample_data;
 
 architecture Behavioral of sample_data is
 
-    type state is (CTRL_REG1, OUT_X_G, OUT_Y_G, OUT_Z_G, OUT_X_XL, OUT_Y_XL, OUT_Z_XL);
+    type state is (CTRL_REG1, OUT_X_G, OUT_Y_G, OUT_Z_G, OUT_X_XL, OUT_Y_XL, OUT_Z_XL, CALC);
     signal curr: state;
     signal address: std_logic_vector(15 downto 0) := (others => '0');
     signal count: std_logic_vector(1 downto 0) := (others => '0');
     signal store: std_logic_vector(7 downto 0);
+    signal AX, AY, AZ, LX, LY, LZ: std_logic_vector(31 downto 0);
+    signal mag_lin, mag_ang: std_logic_vector(15 downto 0);
 begin
     
     cpol <= '1';
     cpha <= '1';
-    clk_div <= 1000;
-    addr <= 0;
     cont <= '0';
     
     process(clk)
@@ -43,21 +43,22 @@ begin
                 tx_data <= (others => '0');
                 curr <= CTRL_REG1;
             else
-                
+                led <= (others => '0');
                 case (curr) is
-                
                     when CTRL_REG1 =>
                         enable <= '1';
                         tx_data <= "0001000011000000";
                         if busy = '0' then
                             curr <= OUT_X_G;
                             enable <= '0';
+                            led(0) <= '1';
                         else
                             curr <= CTRL_REG1;
                         end if;
                     
                     when OUT_X_G =>
-                        wr_en <= "0";
+                        send <= '0';
+                        send_ang <= '0';
                         enable <= '1';
                         if unsigned(count) = 0 then
                             tx_data <= "1001100100000000"; -- x high data
@@ -74,10 +75,8 @@ begin
                             else
                                 enable <= '0';
                                 curr <= OUT_Y_G;
-                                wr_en <= "1";
-                                daddr <= address;
-                                dIn <= rx_data(7 downto 0) & store(7 downto 0);
-                                address <= std_logic_vector(unsigned(address) + 1);
+                                AX <= std_logic_vector(signed(rx_data(7 downto 0) & store(7 downto 0)) * signed(rx_data(7 downto 0) & store(7 downto 0)));
+                                led(1) <= '1';
                                 count <= (others => '0');
                             end if;
                         else
@@ -85,7 +84,6 @@ begin
                         end if;
                         
                     when OUT_Y_G =>
-                        wr_en <= "0";
                         enable <= '1';
                         if unsigned(count) = 0 then
                             tx_data <= "1001101100000000"; -- y high data
@@ -102,10 +100,7 @@ begin
                             else
                                 enable <= '0';
                                 curr <= OUT_Z_G;
-                                wr_en <= "1";
-                                daddr <= address;
-                                dIn <= rx_data(7 downto 0) & store(7 downto 0);
-                                address <= std_logic_vector(unsigned(address) + 1);
+                                AY <= std_logic_vector(signed(rx_data(7 downto 0) & store(7 downto 0)) * signed(rx_data(7 downto 0) & store(7 downto 0)));
                                 count <= (others => '0');
                             end if;
                         else
@@ -113,7 +108,6 @@ begin
                         end if;
                     
                     when OUT_Z_G =>
-                        wr_en <= "0";
                         enable <= '1';
                         if unsigned(count) = 0 then
                             tx_data <= "1001110100000000"; -- z high data
@@ -130,10 +124,7 @@ begin
                             else
                                 enable <= '0';
                                 curr <= OUT_X_XL;
-                                wr_en <= "1";
-                                daddr <= address;
-                                dIn <= rx_data(7 downto 0) & store(7 downto 0);
-                                address <= std_logic_vector(unsigned(address) + 1);
+                                AZ <= std_logic_vector(signed(rx_data(7 downto 0) & store(7 downto 0)) * signed(rx_data(7 downto 0) & store(7 downto 0)));
                                 count <= (others => '0');
                             end if;
                         else
@@ -141,7 +132,6 @@ begin
                         end if;
                     
                     when OUT_X_XL =>
-                        wr_en <= "0";
                         enable <= '1';
                         if unsigned(count) = 0 then
                             tx_data <= "1010100100000000"; -- X lin high data
@@ -158,10 +148,7 @@ begin
                             else
                                 enable <= '0';
                                 curr <= OUT_Y_XL;
-                                wr_en <= "1";
-                                daddr <= address;
-                                dIn <= rx_data(7 downto 0) & store(7 downto 0);
-                                address <= std_logic_vector(unsigned(address) + 1);
+                                LX <= std_logic_vector(signed(rx_data(7 downto 0) & store(7 downto 0)) * signed(rx_data(7 downto 0) & store(7 downto 0)));
                                 count <= (others => '0');
                             end if;
                         else
@@ -169,7 +156,6 @@ begin
                         end if;
                     
                     when OUT_Y_XL =>
-                        wr_en <= "0";
                         enable <= '1';
                         if unsigned(count) = 0 then
                             tx_data <= "1010101100000000"; -- Y lin high data
@@ -186,10 +172,7 @@ begin
                             else
                                 enable <= '0';
                                 curr <= OUT_Z_XL;
-                                wr_en <= "1";
-                                daddr <= address;
-                                dIn <= rx_data(7 downto 0) & store(7 downto 0);
-                                address <= std_logic_vector(unsigned(address) + 1);
+                                LY <= std_logic_vector(signed(rx_data(7 downto 0) & store(7 downto 0)) * signed(rx_data(7 downto 0) & store(7 downto 0)));
                                 count <= (others => '0');
                             end if;
                         else
@@ -197,7 +180,6 @@ begin
                         end if;
                     
                      when OUT_Z_XL =>
-                        wr_en <= "0";
                         enable <= '1';
                         if unsigned(count) = 0 then
                             tx_data <= "1010110100000000"; -- z lin high data
@@ -213,16 +195,20 @@ begin
                                 count <= std_logic_vector(unsigned(count) + 1);
                             else
                                 enable <= '0';
-                                curr <= OUT_X_G;
-                                wr_en <= "1";
-                                daddr <= address;
-                                dIn <= rx_data(7 downto 0) & store(7 downto 0);
-                                address <= std_logic_vector(unsigned(address) + 1);
+                                curr <= CALC;
+                                LZ <= std_logic_vector(signed(rx_data(7 downto 0) & store(7 downto 0)) * signed(rx_data(7 downto 0) & store(7 downto 0)));
                                 count <= (others => '0');
                             end if;
                         else
                             curr <= OUT_Z_XL;
                         end if;
+                    
+                    when CALC =>
+                        send <= '1';
+                        send_ang <= '1';
+                        data_send <= "00000000" & std_logic_vector(unsigned(LX) + unsigned(LY) + unsigned(LZ));
+                        data_send_ang <= "00000000" & std_logic_vector(unsigned(AX) + unsigned(AY) + unsigned(AZ));
+                        curr <= OUT_X_G;
                         
                     when others =>
                         curr <= CTRL_REG1;
